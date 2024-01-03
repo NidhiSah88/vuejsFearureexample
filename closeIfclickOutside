@@ -1,0 +1,257 @@
+Example1:
+Click outside to close <dialog>
+
+<button onclick="window.dialog.showModal()">Open dialog</button>
+
+<dialog id="dialog" style="padding: 0; border: 0;">
+  <form method="dialog">
+    <div>Hello from dialog element. You can close me by clicking outside or Close button</div>
+    <button>Close</button>
+  </form>
+</dialog>
+function onClick(event) {
+  if (event.target === dialog) {
+    dialog.close();
+  }
+}
+
+const dialog = document.querySelector("dialog");
+dialog.addEventListener("click", onClick);
+dialog.showModal();
+
+form {
+  max-width: 200px;
+}
+
+Reference: https://codepen.io/dvdvdmt/pen/BaavWbp
+
+Example2:
+
+<div id="app">
+  <div class="callout" >
+    <button @click.stop="show" class="button secondary">Click me</button>
+    
+    <div class="callout" v-if="showInside" v-click-outside="closeEvent">
+      
+      <p>This is the Inside. You can click inside of here and nothing happens. You close with the button below, or by clicking outside the box.</p>
+      
+      <p>If you click outside of this box, the event defined via the <i>v-click-outside</i> directive will be emitted.</p>
+      
+      <p>Caveat: The Event that makes this box show ("Click me") has to use the .stop modifier, otherwise the event set up by <i>v-click-outside</i> will catch it, and $emit the custom event prematurely </p>
+      
+      <button class="button" @click="hide">Close</button>
+    
+    </div>
+    
+  </div>
+</div>
+
+Vue.directive('click-outside', {
+  priority: 700,
+  bind () {
+    let self  = this
+    this.event = function (event) { 
+    	console.log('emitting event')
+    	self.vm.$emit(self.expression,event) 
+ 	  }
+    this.el.addEventListener('click', this.stopProp)
+    document.body.addEventListener('click',this.event)
+  },
+  
+  unbind() {
+  	console.log('unbind')
+    this.el.removeEventListener('click', this.stopProp)
+    document.body.removeEventListener('click',this.event)
+  },
+  stopProp(event) {event.stopPropagation() }
+})
+
+var App = new Vue({
+  el: '#app',
+  data() {
+    return {
+			showInside: false
+    }
+  },
+  methods:{
+    show: function () {
+    	this.showInside = true 
+    },
+    hide: function () { 
+    	console.log('hide')
+    	this.showInside = false
+    }
+  },
+  events: {
+    closeEvent: function () {
+      console.log('close event called')
+      this.hide()
+    }
+  }
+})
+reference:
+https://jsfiddle.net/Linusborg/yzm8t8jq/
+
+
+Example: when click outside the dropdown , it should get closed
+
+<div id="app">	
+  <h1>Custom Select Dropdown</h1>
+
+  <div class="aselect" :data-value="value" :data-list="list">
+	    <div class="selector box" @click="toggle()">
+	        <div class="label box">
+				    <span class="box">{{ value }}</span>
+	        </div>
+			<div class="arrow box" :class="{ expanded : visible }"></div>
+	        <div :class="{ hidden : !visible, visible }">
+	            <ul>
+	                <li :class="{ current : item === value }" v-for="item in list" @click="select(item)">{{ item }}</li>
+	            </ul>
+	        </div>
+	    </div>
+	</div>
+</div>
+	const app = new Vue({
+    el: "#app",
+		name: 'aselect',
+		data: {
+			value: 'Select a Fruit',
+			list: ["Orange","Apple","Kiwi", "Lemon", "Pineapple"],
+      visible: false
+		},
+		methods: {
+			toggle() {
+				this.visible = !this.visible;
+			},
+			select(option) {
+			    this.value = option;
+			},
+      handleClick(e){
+        const classname = e.target.className;
+        if(this.visible && !classname.includes("box")){
+          this.visible = false;
+        }
+      }
+		},
+    created () {
+    window.addEventListener('click', this.handleClick);
+  },
+  destroyed () {
+    window.removeEventListener('click', this.handleClick);
+  },
+	})
+@import url('https://fonts.googleapis.com/css?family=Mogra|Roboto');
+body {
+  background: STEELBLUE;
+  font-family: 'Roboto';
+}
+
+h1 { 
+  color: #f9f9f9;
+  text-align: center;
+  font-size: 36px;
+  line-height: 1;
+  font-weight: 300;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  font-family: "Mogra";
+  margin-bottom: 0;
+  text-shadow: 3px 4px 0px rgba(0,0,0,0.3);
+}
+
+.aselect {
+		width: 280px;
+    margin: 20px auto;
+		.selector {
+			border: 1px solid gainsboro;
+			background: #F8F8F8;
+			position: relative;
+			z-index: 1;
+			.arrow {
+				position: absolute;
+				right: 10px;
+				top: 40%;
+				width: 0;
+				height: 0;
+				border-left: 7px solid transparent;
+				border-right: 7px solid transparent;
+				border-top: 10px solid #888;
+				transform: rotateZ(0deg) translateY(0px);
+				transition-duration: 0.3s;
+				transition-timing-function: cubic-bezier(.59,1.39,.37,1.01);
+			}
+			.expanded {
+				transform: rotateZ(180deg) translateY(2px);
+			}
+			.label {
+				display: block;
+				padding: 12px;
+				font-size: 16px;
+				color: #888;
+			}
+		}
+		ul {
+			width: 100%;
+			list-style-type: none;
+      padding: 0;
+      margin: 0;
+			font-size: 16px;
+			border: 1px solid gainsboro;
+			position: absolute;
+			z-index: 1;
+      background: #fff;
+		}
+		li {
+			padding: 12px;
+			color: #666;
+			&:hover {
+				color: white;
+				background: seagreen;
+			}
+		}
+		.current {
+			background: #eaeaea;
+		}
+		.hidden {
+			visibility: hidden;
+		}
+		.visible {
+			visibility: visible;
+		}
+	}
+
+reference: https://codepen.io/salim-hosen/pen/xxqYYMQ
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
