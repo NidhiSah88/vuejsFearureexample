@@ -1,0 +1,510 @@
+<template>
+    <div class="pdfBackdrop">
+      <div class="pdfContent">
+        <header>
+          <div class="headerNav">
+            <div  @click="goBack" class="mt-2">
+              <!-- @click="emit('goBack')" -->
+              <i aria-hidden="true" data-icon="feather:arrow-left" class="iconify is-primary" style="font-size: 20px"></i>
+            </div>
+            <h3 class="title is-5 is-narrow is-thin mt-2">
+              {{snippetData.qtext}}
+            </h3>
+          
+          </div>
+        </header>
+        <!-- <header @click="emit('goBack')">
+          <div class="headerNav">
+            <i aria-hidden="true" data-icon="feather:arrow-left" class="iconify is-primary" style="font-size: 20px"></i>
+            <div>Back</div>
+          </div>
+        </header> -->
+        <section class="pdfSection">
+          <div class="columns mt-2">
+            <div class="column is-3 relevant-answer pt-0">
+              <div class="tile-grid tile-grid-v2">
+                <div v-for="(ele,index) in snippetData.answers" :key="index">
+                 <!-- :class="{ 'is-active': selected === index }"> -->
+                <transition-group name="list" tag="div" class="columns is-multiline pt-3" 
+                  v-if="ele.BinaryScore==='yes' || ele.BinaryScore==='partial'" 
+                > 
+                  <div class="tile-grid-item highlighted1 mb-2" 
+                   :class="{'selectedSnippet':selected==index}"
+                    @click="selected=index" 
+                  >
+                    <!-- :class="{ 'highlighted': selectedIndex === index }" -->
+                    <!-- @click="selectItem(index)" -->
+                    <div class="columns">
+                      <div class="column" @click="loadPdfForSnippet(ele.SnippetText, ele.Url)"> 
+                       <div class="is-flex ">
+                            <a class="ques-url ">{{ele.Url}} </a>
+
+                       </div> 
+                        <NField class="is-flex">
+                            <!-- <span class="tag is-primary mr-2">{{props?.answerData['Information Release Date']}}</span> -->
+                         
+                            <h4 class="bold-cls ques-url mt-2">
+                              {{ele.SnippetText.split('.pdf')[1].split('_x000D_').join('').trim()}}
+                              <!-- {{answersSnippet}} -->
+                            </h4>
+
+                        </NField>
+                         <NButton color="link" light> 
+                          {{ ele.InformationReleaseDate }} 
+                         </NButton>
+                      </div>
+                    </div>
+                  </div>
+                </transition-group>
+                </div>
+              </div>
+            </div>
+            <div class="column is-9">
+              <div class="tile-grid tile-grid-v2">
+                <transition-group name="list" tag="div" class="columns is-multiline">
+                  <div class="r-card pdf-area">
+                    <div id="viewerContainer" ref="container">
+                      <div id="viewer" class="pdfViewer" ref="viewer"></div>
+                    </div>
+                    <!-- <canvas id="the-canvas"></canvas> -->
+                    <div class="pdfActions" @click="doAction">
+                      <span>
+                        <p class="has-text-weight-bold mx-2">{{ pageDetails.currentPage }}/{{ pageDetails.totalPages }}
+                        </p>
+                      </span>
+                    </div>
+                    <!-- <N-Loader v-if="isLoading" :active="isLoading" class="pdfLoader"></N-Loader> -->
+                    <!-- <N-Loader v-if="isSearching" :active="isSearching" text="Searching..." class="pdfLoader"></N-Loader> -->
+                  </div>
+                </transition-group>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </template>
+ 
+  <script setup lang="ts">
+  import { toast } from 'bulma-toast';
+  import { onMounted, reactive, ref, toRaw,computed } from 'vue'
+  import * as pdfjsLib from "pdfjs-dist/build/pdf";
+  import * as pdfjsViewer from "pdfjs-dist/web/pdf_viewer.js";
+  import * as pdfjsWorker from "pdfjs-dist/build/pdf.worker.entry.js";
+  import Esgservice from '/@src/services/esg.service';
+  import iEsgservice from "/@src/services/iesg.service";
+  import { useRouter, RouteParamValueRaw, useRoute } from 'vue-router'
+
+  
+  export interface pdfEmits {
+    (e: 'goBack'): void
+  }
+  
+    export interface pdfProps {
+    selectedQuestion: object,
+    answerData: object
+  }
+  
+  const emit = defineEmits<pdfEmits>();
+  const props = defineProps<pdfProps>();
+
+
+
+  const route = useRoute();
+  const router = useRouter();
+
+  const selected = ref(-1);
+  const selectedIndex = ref(-1);
+  const isLoading = ref(false);
+  const isSearching = ref(false);
+  const container = ref(null);
+  const viewer = ref(null);
+  let stringDivisor = 1.3;
+  let matchLoop = 0;
+  let deepMatchLoop = 0;
+  let noMatches = false;
+  const pageDetails = reactive({
+    currentPage: 1,
+    totalPages: 0
+  })
+  let pdfPageNo = ref(1);
+
+  const pdfSnippet = ref('');
+	const newPdfUrl = ref("");
+  const snippetData = ref({});
+  const snippetUrl = ref('');
+  const answersSnippet = ref('');
+  
+  // Generating PDF
+  // Assigning Worker to the pdf lib
+  pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+  
+  //Configs
+//   const pdfUrl = `https://nbim.intellectseecapps.com/esg/preview/html?url=${props?.answerData?.Link}`;
+  let searchQuery = '';
+  
+  //PdfViewer manipulation reference
+  const eventBus = new pdfjsViewer.EventBus();
+  const pdfLinkService = new pdfjsViewer.PDFLinkService({ eventBus });
+  const pdfFindController = reactive(new pdfjsViewer.PDFFindController({ eventBus, linkService: pdfLinkService }));
+  
+
+  onMounted( async () => {
+	  isLoading.value = true;
+
+     try {
+        const payload = {
+          question_id: route.params.qId,
+          site: route.query.site,
+        };
+
+        const response = await iEsgservice.getAnswersData(payload);
+        
+        snippetData.value = response.data.data;
+        
+      } catch (error) {
+        console.error('Error fetching data:', error);
+      }
+    
+
+      for (const answer of snippetData.value.answers) {
+         answersSnippet.value = answer.SnippetText.split('.pdf')[1].split('_x000D_').join('').trim();
+         snippetUrl.value = answer.Url
+
+      }  
+
+  });
+
+  const goBack = ()=> {
+    emit('goBack');
+    router.go(-1); 
+  }
+
+  const loadPDFMirror = async (newURL,SnippetText,pdfPageNo) => { 
+   
+    let pdfSnippet = SnippetText.split('.pdf')[1].split('_x000D_').join('').trim();
+    const pdfUrl = newURL;
+
+    searchQuery = pdfSnippet;
+    
+    const pdfViewer = new pdfjsViewer.PDFViewer({
+      container: container.value,
+      eventBus,
+      linkService: pdfLinkService,
+      findController: toRaw(pdfFindController)
+    });
+    console.log("pdfViewer:",pdfViewer)
+
+    pdfLinkService.setViewer(pdfViewer);
+    console.log("pdfLinkService:",pdfLinkService)
+    eventBus.on("pagesinit", function () {
+      pdfViewer.currentScaleValue = 0.8
+  
+      if(pdfViewer && pdfViewer._pages.length && (pdfViewer._pages[0].width > pdfViewer._pages[0].height)) {
+        pdfViewer.currentScaleValue = 'page-width'
+      }
+
+      isSearching.value = true;
+      isLoading.value = false;
+  
+    });
+
+    const loadingTask = pdfjsLib.getDocument({ url: pdfUrl });
+
+    console.log("loadingTask",loadingTask)
+
+    const pdfDocument = await loadingTask.promise.catch((err) => {
+      toast({
+        message: err.message,
+        type: 'is-danger',
+        position: 'top-right',
+        dismissible: true,
+        duration: 3000,
+        pauseOnHover: true,
+      })
+      return
+    });
+  
+    if (pdfDocument) {
+      console.log("IF INSIDE pdfDocument",pdfDocument)
+
+      pdfViewer.setDocument(pdfDocument);
+      pdfLinkService.setDocument(pdfDocument, null);
+      pageDetails.totalPages = pdfLinkService?.pdfDocument?.numPages
+      pageDetails.currentPage = pdfPageNo;
+
+      if(pdfPageNo && pdfPageNo<=pageDetails.totalPages){
+        console.log("2323",pdfPageNo && pdfPageNo<=pageDetails.totalPages)
+        pdfDocument.getPage(pdfPageNo).then((pdfPage) =>{
+          console.log("pdfPage:",pdfPage)
+          pdfViewer.scrollPageIntoView({
+              pageNumber: pdfPageNo,
+              destArray: null, 
+              allowNegativeOffset: true, 
+          });
+        });
+        console.log("pdfPageNo in line248:",pdfPageNo)
+      }
+
+
+      
+
+
+
+    }
+  }
+  
+  const loadPdfForSnippet = async (SnippetText?: string, url?: string ) => {
+
+       await iEsgservice.iEsgEdgePdf(route.query.site, url).then((response) => {
+        console.log("pdf response",response)
+        if (response.status == 200){
+          newPdfUrl.value = response.data.data.url;
+          pdfPageNo.value = response.data.data.page_number;
+         // pdfPageNo.value = 75;
+
+        }
+      
+      })
+      .finally(() => {
+			  loadPDFMirror(newPdfUrl.value,SnippetText,pdfPageNo.value);
+       // getSearchResult('');
+      });
+
+  };
+
+  eventBus.on('pagechanging', (pageDetail) => {
+    console.log("pageDetail",pageDetail)
+    pageDetails.currentPage = pageDetail.pageNumber
+    pageDetails.totalPages = pdfLinkService.pdfDocument.numPages
+    console.log("pageDetails.currentPage",pageDetails.currentPage)
+    console.log("pageDetails",pageDetails)
+
+  });
+
+  const getSearchResult = (subQuery?: string,)=>{
+       if (subQuery || searchQuery) {
+      eventBus.dispatch("find", {
+        type: "",
+        query: subQuery || searchQuery,
+        phraseSearch: true,
+        findPrevious: true
+      });
+    }
+  }
+
+  // eventBus.on('updatefindmatchescount', (update) => {
+  //   toast({
+  //     message: 'Matches found',
+  //     type: 'is-success',
+  //     position: 'top-right',
+  //     dismissible: true,
+  //     duration: 3000,
+  //     pauseOnHover: true,
+  //   });
+  // });
+
+  // watch(pdfFindController, () => {
+  //  console.log('pdfFindController',{...pdfFindController})
+  
+  // });
+
+  eventBus.on("updatefindcontrolstate", (controller) => {
+    console.log("controller",controller)
+    console.log("deepMatchLoop",deepMatchLoop)
+     //if(deepMatchLoop >= 3 && !noMatches) {
+      // console.log("deepMatchLoop >= 3 if called")
+       //noMatches = true;
+      // toast({
+       //  message: 'No matches found',
+       //  type: 'is-warning',
+       //  position: 'top-right',
+       //  dismissible: true,
+        // duration: 3000,
+        // pauseOnHover: true,
+      // });
+      // isSearching.value = false
+     //}
+    
+    console.log("controller.source._scrollMatches",controller.source._scrollMatches);
+
+    if (controller.state == 1 && controller.source._matchesCountTotal === 0 && deepMatchLoop <= 3 && !noMatches) {
+      console.log("controller.state == 1  called");
+      matchLoop++;
+      const query = searchQuery.split(" ");
+      let subQueryLength = Math.ceil(query.length / stringDivisor);
+      let subQuery = matchLoop === 1 ? query.slice(0, subQueryLength).join(" ") : query.slice(subQueryLength, query.length).join(" ");
+      if (matchLoop > 2) {
+        console.log("matchLoop > 2 called")
+        deepMatchLoop++
+        subQueryLength = Math.ceil(query.length / 2);
+        subQuery = deepMatchLoop === 1 ? 
+        query.slice(0, subQueryLength).join(" ") : 
+        deepMatchLoop === 2 ? 
+        query.slice(subQueryLength , subQueryLength *2).join(" ") : 
+        query.slice(subQueryLength*2 , query.length).join(" ");
+      } else {
+        deepMatchLoop = 0;
+      }
+      getSearchResult(subQuery);
+    }
+  
+     //if (matchLoop >= 1 && controller.source._matchesCountTotal === 1) {
+      console.log("matchLoop >= 1 called")
+       //toast({
+        // message: 'Partial matches found',
+        // type: 'is-success',
+        // position: 'top-right',
+       //  dismissible: true,
+      //   duration: 3000,
+       //  pauseOnHover: true,
+      // });
+    // }
+     //if(matchLoop >=1 && controller.state == 2 && controller.source._matchesCountTotal > 1) {
+      // console.log("matchLoop >=1 && controller.state == 2 called")
+      // toast({
+      //   message: 'Partial matches found',
+      //   type: 'is-success',
+      //   position: 'top-right',
+       //  dismissible: true,
+       //  duration: 3000,
+       //  pauseOnHover: true,
+      // });
+      // isSearching.value = false
+     //}
+    // if (matchLoop === 0 && controller.state == 2 && controller.source._matchesCountTotal === 1) {
+      // console.log("matchLoop === 0 && controller.state == 2 called")
+       //toast({
+        // message: 'Matches found',
+        // type: 'is-success',
+        // position: 'top-right',
+        // dismissible: true,
+        // duration: 3000,
+         //pauseOnHover: true,
+       //});
+    // }
+    if (controller.source._matchesCountTotal === 1) {
+      console.log("controller.source._matchesCountTotal === 1 called")
+      isSearching.value = false
+      noMatches = false;
+    }
+  })
+
+</script>
+  
+ <style lang="scss" scoped>
+ 
+  #viewerContainer {
+    overflow: auto;
+    position: absolute;
+    width: 100%;
+    height: 100%;
+  }
+  
+  .ques-url{
+    width: 100%;
+    word-wrap: break-word;
+    word-break: break-all;
+  }
+  .pdfBackdrop {
+    position: fixed;
+    width: 100%;
+    height: 100%;
+    top: 0;
+    left: 0;
+    background: rgba(101, 101, 104, 0.8);
+    z-index: 100;
+  
+    .pdfContent {
+      width: 100%;
+      height: 100vh;
+      background: var(--background-grey);
+    }
+  }
+  
+  .pdfSection {
+    margin-top: 15px;
+    padding: 10px 20px;
+    .tile-grid-item {
+      .column{
+        width: 100%;
+        .bold-cls{
+          width: 100%
+        }
+      }
+     
+    }
+  }
+  
+  .headerNav {
+    display: flex;
+    cursor: pointer;
+    height: 35px;
+    padding: 6px 20px 6px 20px;
+  
+    h3 {
+      margin-left: 10px;
+    }
+  }
+  
+  .pdf-area {
+    height: calc(100vh - 80px);
+    overflow: scroll;
+    overflow-x: hidden;
+    display: flex;
+    justify-content: center;
+    position: relative;
+    padding: 0px;
+    #viewer {
+      display: flex;
+      flex-direction: column;
+    }
+  }
+  
+  .pdfActions {
+    position: fixed;
+    bottom: 20px;
+    background: var(--dark-sidebar-light-2);
+    justify-content: center;
+    align-items: center;
+    display: flex;
+    padding: 5px;
+    border-radius: 20px;
+    z-index: 1;
+  
+    div {
+      cursor: pointer;
+  
+      svg {
+        pointer-events: none;
+        color: var(--light-text);
+      }
+    }
+  }
+  
+  .pdfLoader {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    opacity: 0.7;
+    z-index: 5;
+  }
+  
+  .relevant-answer {
+    height: calc(100vh - 80px);
+    overflow: scroll;
+    overflow-x: hidden;
+  
+    .tile-grid-item.is-active {
+      border-color: var(--primary);
+    }
+  }
+.selectedSnippet{
+      border-color: var(--primary);
+      background-color: lightblue; 
+}
+.highlighted {
+  border-color: var(--primary);
+  background-color: yellow;  // Add your desired highlight styles
+}
+  </style>
